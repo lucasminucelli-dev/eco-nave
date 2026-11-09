@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Configurações e arquivos locais
+.env
+.env.*
+.idea/
+.DS_Store
+
+# Dados gerados pelo jogo
+ranking.txt
+progress.json
+
+# Testes e cache
+.pytest_cache/
+.coverage

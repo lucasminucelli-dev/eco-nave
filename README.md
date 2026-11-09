@@ -1,4 +1,4 @@
-# ECO NAVE 2.0 — Desafio do Descarte Consciente
+# ECO NAVE 2.1 — Desafio do Descarte Consciente
 
 Jogo educativo em Python + Pygame sobre coleta seletiva, reutilização, economia circular e logística reversa de eletroeletrônicos. A versão 2.0 preserva o arcade original da nave e das dez lixeiras e acrescenta conquistas, novos resíduos, Oficina Circular, Enciclopédia persistente e trilha sonora.
 
@@ -37,16 +37,18 @@ Não há dependências Python adicionais além do Pygame. A música e os sprites
 | `-` / `+` | Diminuir / aumentar volume dos efeitos |
 | F11 | Alternar tela cheia |
 
-### Menu principal
+### Menu principal (hub)
 
-| Tecla | Ação |
+| Tecla / ação | Função |
 |---|---|
-| ENTER | Iniciar partida arcade |
-| O | Abrir Oficina Circular |
-| C | Abrir Enciclopédia |
-| R | Abrir ranking Top 10 |
-| G | Abrir guia de descarte na vida real |
-| ESC | Sair |
+| ← → ↑ ↓ (ou A / D / W / S) | mover a seleção entre os cartões |
+| ENTER / ESPAÇO | abrir o cartão selecionado (começa em **Jogar**) |
+| O / C / R / G / H | abrir direto Oficina, Enciclopédia, Ranking, Descarte real, Como jogar |
+| V | painel de áudio (música e efeitos separados) |
+| M | liga/desliga todo o áudio |
+| F11 | tela cheia |
+| ESC | sair (pede confirmação) |
+| Mouse | passar por cima seleciona, clicar abre |
 
 ### Oficina Circular
 
@@ -107,6 +109,28 @@ Substitua `assets/audio/eco_nave_theme.ogg` por outro OGG compatível mantendo o
 A faixa incluída é uma trilha instrumental chiptune original, sintetizada para o ECO NAVE 2.0 sem gravações ou samples de terceiros. A música solicitada no OpenGameArt — “Keep your dream alive! (seamless loop)”, de congusbongus, consta na página do autor como CC0, mas o arquivo não pôde ser obtido no ambiente em que esta atualização foi preparada. A faixa incluída **não é** a obra de congusbongus.
 
 Fonte da faixa solicitada: <https://opengameart.org/content/keep-your-dream-alive-seamless-loop> (autor: congusbongus; licença indicada na página: CC0).
+
+## Tela inicial e navegação
+
+```
+            ┌──────────── MENU (hub) ────────────┐
+   JOGAR    OFICINA CIRCULAR   ENCICLOPÉDIA   RANKING   DESCARTE REAL   COMO JOGAR   ÁUDIO
+```
+
+Todas as telas voltam ao hub com ESC. O painel de áudio (V) abre sobre qualquer tela; durante a partida
+ele pausa o jogo. A Oficina nunca mexe na partida em andamento (ela tem sua própria sessão).
+
+## Como evitar sobreposição ao criar telas
+
+Não posicione texto por tentativa e erro. Use os helpers de `eco_nave/ui.py`:
+
+- `Ui.fit_block(surf, texto, (x, y, w, h), cor, tamanho_max, tamanho_min)`: quebra o texto e reduz a fonte até caber.
+- `Ui.bullets(...)`: lista com marcadores que se ajusta ao espaço.
+- `Ui.hint_bar(surf, [("ENTER", "confirmar"), ...], y)`: linha de atalhos centralizada.
+- `Ui.header`, `Ui.chip`, `Ui.panel` e `eco_nave/icons.py` para o resto.
+
+Depois rode `python run_tests.py`: `tests/test_layout.py` desenha todas as telas e acusa textos sobrepostos.
+Para incluir uma tela nova no teste, acrescente-a em `tests/test_layout.py`.
 
 ## Estrutura principal
 

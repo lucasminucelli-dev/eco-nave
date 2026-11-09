@@ -6,6 +6,7 @@ import pygame
 
 from .assets import Assets
 from .audio_manager import AudioManager
+from .audio_panel import AudioPanel
 from .backdrop import Backdrop
 from .config import FPS, H, W
 from .entities import Ship
@@ -16,7 +17,7 @@ from .progress_store import ProgressStore
 from .session import Session
 from .sound import SoundFx
 from .states import (MenuState, NameEntryState, PausedState, PlayingState, RankingState,
-                     WorkshopState, CodexState, RealWorldState)
+                     WorkshopState, CodexState, RealWorldState, HelpState)
 
 
 class Game:
@@ -34,6 +35,7 @@ class Game:
         self.backdrop = Backdrop()
         self.ship = Ship()
         self.session = Session(self.assets, self.snd, self.ship, self.progress_store)
+        self.audio_panel = AudioPanel(self)
         self.states = {
             "menu": MenuState(self),
             "playing": PlayingState(self),
@@ -43,6 +45,7 @@ class Game:
             "workshop": WorkshopState(self),
             "codex": CodexState(self),
             "real_world": RealWorldState(self),
+            "help": HelpState(self),
         }
         self.state_name = None
         self.state = None
@@ -79,6 +82,10 @@ class Game:
                 pygame.display.toggle_fullscreen()
             except Exception:
                 pass
+        elif self.audio_panel.visible:
+            self.audio_panel.handle_event(ev)       # o painel de áudio captura o teclado
+        elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_v and self.state.allow_mute:
+            self.audio_panel.open()
         else:
             self.state.handle_event(ev)
 
@@ -90,6 +97,7 @@ class Game:
     def draw(self):
         surf = self.scene
         self.state.draw(surf)
+        self.audio_panel.draw(surf)
         ox = oy = 0
         amp = self.state.shake_amplitude()
         if amp > 0:

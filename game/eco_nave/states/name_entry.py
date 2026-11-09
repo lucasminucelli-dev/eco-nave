@@ -77,7 +77,7 @@ class NameEntryState(GameState):
         surf.blit(game.assets.dim, (0, 0))
         pw, ph = 820, 520
         px, py = (W - pw) // 2, (H - ph) // 2 - 8
-        Ui.panel(surf, (px, py, pw, ph), border=(255, 130, 130), bw=3)
+        Ui.panel(surf, (px, py, pw, ph), alpha=252, border=(255, 130, 130), bw=3)
         cx = W // 2
         TEXT.draw(surf, "FIM DE JOGO", 54, (255, 120, 120), (cx, py + 42), "center", bold=True,
                   shadow=(0, 0, 0))

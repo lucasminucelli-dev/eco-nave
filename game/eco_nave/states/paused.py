@@ -22,14 +22,8 @@ class PausedState(GameState):
         game = self.game
         game.states["playing"].draw(surf)
         surf.blit(game.assets.dim, (0, 0))
-        Ui.panel(surf, (W // 2 - 340, 200, 680, 290), border=(70, 110, 190))
-        TEXT.draw(surf, "PAUSADO", 64, (255, 255, 255), (W // 2, 262), "center", bold=True, shadow=(0, 0, 0))
-        x = W // 2 - 250
-        w = Ui.keylabel(surf, "P", x, 330)
-        TEXT.draw(surf, "continuar", 20, (226, 234, 250), (x + w + 10, 330), "midleft")
-        x2 = W // 2 + 30
-        w = Ui.keylabel(surf, "ESC", x2, 330)
-        TEXT.draw(surf, "voltar ao menu", 20, (226, 234, 250), (x2 + w + 10, 330), "midleft")
-        TEXT.draw(surf, "VOCÊ SABIA?", 15, (130, 245, 160), (W // 2, 382), "center", bold=True)
-        for i, line in enumerate(TEXT.wrap(game.fact, 20, 600)[:3]):
-            TEXT.draw(surf, line, 20, (222, 230, 246), (W // 2, 414 + i * 26), "center")
+        Ui.panel(surf, (W // 2 - 340, 190, 680, 330), alpha=252, border=(70, 110, 190))
+        TEXT.draw(surf, "PAUSADO", 60, (255, 255, 255), (W // 2, 252), "center", bold=True, shadow=(0, 0, 0))
+        Ui.hint_bar(surf, [("P", "continuar"), ("V", "áudio"), ("ESC", "menu")], 322, 17)
+        TEXT.draw(surf, "VOCÊ SABIA?", 15, (130, 245, 160), (W // 2, 384), "center", bold=True)
+        Ui.fit_block(surf, game.fact, (W // 2 - 300, 408, 600, 90), (222, 230, 246), 20, 14, align="center")

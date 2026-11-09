@@ -33,6 +33,10 @@ class TextRenderer:
             self._texts[key] = s
         return s
 
+    def line_height(self, size, bold=False):
+        """Altura (px) de uma linha de texto nesse tamanho."""
+        return self.font(size, bold).get_height()
+
     def width(self, text, size, bold=False):
         return self.surface(text, size, (0, 0, 0), bold).get_width()
 

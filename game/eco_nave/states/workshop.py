@@ -1,302 +1,441 @@
 # -*- coding: utf-8 -*-
-"""Oficina Circular: avaliação e triagem simulada de um notebook."""
+"""Oficina Circular: avaliação do equipamento, triagem de componentes e resultado.
+
+A tela usa regiões fixas (cabeçalho, bancada, área de trabalho, painel de feedback e barra de
+atalhos) e mede todo texto antes de desenhar, então nada se sobrepõe em nenhuma fonte.
+"""
 import math
+import random
+
 import pygame
 
-from ..config import H, W
+from ..config import W
 from ..drawing import D, rr
+from ..effects import Effects
+from ..icons import draw_icon
 from ..text import TEXT
 from ..ui import Ui
-from ..workshop_catalog import COMPONENTS, DESTINATIONS, EQUIPMENT_CATALOG, render_component, render_equipment
+from ..utils import clamp, mix, shade
+from ..workshop_catalog import (ASSESSMENT_OPTIONS, COMPONENTS, DESTINATIONS, EQUIPMENT_CATALOG, REUSE_NOTE,
+                                SAFETY_NOTE, render_component, render_equipment)
+from ..workshop_run import WorkshopRun
 from .base import AttractState
 
-
-ASSESSMENT_OPTIONS = [
-    ("Reutilizar ou doar imediatamente", "Ainda é preciso corrigir a falha conhecida antes de repassar o equipamento."),
-    ("Encaminhar para manutenção", "Correto! Um profissional pode substituir a bateria e testar o notebook antes de doar ou reutilizar."),
-    ("Logística reversa / reciclagem especializada", "Essa é a rota adequada quando o equipamento não pode ser recuperado. Neste cenário, a bateria pode ser substituída, então vale reparar primeiro."),
-]
+GREEN, GOLD, BLUE, ORANGE, RED = (130, 245, 190), (255, 226, 126), (130, 202, 255), (255, 188, 118), (255, 150, 130)
+DEST_STYLE = {"reuse": ("reuse", (124, 240, 174)), "recovery": ("recycle", (130, 202, 255)),
+              "special": ("shield", (255, 188, 118))}
+PX, PY, PW, PH = 40, 128, 1200, 580          # painel principal
+LEFT_X, LEFT_W = 64, 320                     # coluna da bancada
+RIGHT_X, RIGHT_W = 408, 808                  # área de trabalho
+STEPS = ("AVALIAÇÃO", "TRIAGEM", "RESULTADO")
+CURIOSITY = ("Trocar uma bateria desgastada, ou reaproveitar memória e SSD depois de testes, pode prolongar a "
+             "vida útil de um notebook e evitar a produção de um aparelho novo.")
 
 
 class WorkshopState(AttractState):
-    """Desafio modular de oficina; novos equipamentos podem ganhar cenários próprios."""
+    """Desafio modular: novos equipamentos podem ganhar cenários e componentes próprios."""
 
     def __init__(self, game):
         super().__init__(game)
         self.equipment = EQUIPMENT_CATALOG[0]
-        self.stage = "assessment"
-        self.selected = 0
-        self.destination_selected = 0
-        self.mode = "select"
-        self.feedback = ""
-        self.feedback_ok = False
-        self.feedback_timer = 0.0
-        self.pending_action = None
-        self.correct = 0
-        self.wrong = 0
-        self.score = 0
-        self.component_index = 0
-        self.confirm_exit = False
-        self.elapsed = 0.0
-        self.new_discoveries = set()
+        self.rng = random.Random()               # sorteio próprio: não interfere no sorteio do jogo
+        self.last_scenario = None
+        self.fx = Effects(self.rng)
+        self._sprites = {}
+        self._reset()
 
-    def enter(self, equipment_id="equip_notebook_antigo", **kwargs):
+    # ------------------------------------------------------------------ ciclo
+    def _reset(self):
+        self.run = None
+        self.stage = "assess"                    # assess | triage | summary
+        self.opt_sel = 0
+        self.part_sel = 0
+        self.tray_sel = 0
+        self.mode = "select"                     # assess: select | feedback / triage: select | choose | feedback
+        self.feedback = ("", True)
+        self.t = 0.0
+        self.stage_t = 0.0
+        self.flight = None
+        self.trays = {k: [] for k, _l, _s in DESTINATIONS}
+        self.confirm_exit = False
+        self.fx.reset()
+        self.burst_t = 0.0
+
+    def enter(self, equipment_id=None, **kwargs):
         self.equipment = next((x for x in EQUIPMENT_CATALOG if x.item_id == equipment_id), EQUIPMENT_CATALOG[0])
-        self.stage = "assessment"
-        self.selected = 0
-        self.destination_selected = 0
-        self.mode = "select"
-        self.feedback = ""
-        self.feedback_ok = False
-        self.feedback_timer = 0.0
-        self.pending_action = None
-        self.correct = self.wrong = self.score = 0
-        self.component_index = 0
-        self.confirm_exit = False
-        self.elapsed = 0.0
-        self.new_discoveries = set()
-        self._discover(self.equipment.item_id)
+        self._reset()
+        self.run = WorkshopRun(self.equipment, rng=self.rng, avoid_key=self.last_scenario)
+        self.last_scenario = self.run.scenario.key
+        self.game.progress_store.discover(self.equipment.item_id)
 
-    def _discover(self, item_id):
-        if self.game.progress_store.discover(item_id):
-            self.new_discoveries.add(item_id)
-
+    # ------------------------------------------------------------------ entrada
     def handle_key(self, key):
+        enter = key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
+        left = key in (pygame.K_LEFT, pygame.K_a)
+        right = key in (pygame.K_RIGHT, pygame.K_d)
+        up, down = key in (pygame.K_UP, pygame.K_w), key in (pygame.K_DOWN, pygame.K_s)
         if self.confirm_exit:
             if key in (pygame.K_y, pygame.K_RETURN, pygame.K_KP_ENTER):
                 self.game.set_state("menu")
             elif key in (pygame.K_n, pygame.K_ESCAPE):
                 self.confirm_exit = False
             return
-
+        if self.stage == "summary":
+            if enter:
+                self.enter(self.equipment.item_id)           # nova rodada, com outro cenário
+            elif key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
+                self.game.set_state("menu")
+            return
         if key == pygame.K_ESCAPE:
-            self.confirm_exit = True
-            return
-
-        if self.feedback_timer > 0:
-            return
-
-        if self.stage == "assessment":
-            if key in (pygame.K_LEFT, pygame.K_a, pygame.K_UP):
-                self.selected = (self.selected - 1) % len(ASSESSMENT_OPTIONS)
-            elif key in (pygame.K_RIGHT, pygame.K_d, pygame.K_DOWN):
-                self.selected = (self.selected + 1) % len(ASSESSMENT_OPTIONS)
-            elif key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                self._check_assessment()
-            return
-
-        if self.stage == "components":
-            if self.mode == "select":
-                if key in (pygame.K_LEFT, pygame.K_a, pygame.K_UP):
-                    self.component_index = (self.component_index - 1) % len(COMPONENTS)
-                elif key in (pygame.K_RIGHT, pygame.K_d, pygame.K_DOWN):
-                    self.component_index = (self.component_index + 1) % len(COMPONENTS)
-                elif key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                    self._discover(COMPONENTS[self.component_index].item_id)
-                    self.mode = "destination"
-                    self.destination_selected = 0
+            if self.stage == "triage" and self.mode == "choose":
+                self.mode = "select"
             else:
-                if key in (pygame.K_LEFT, pygame.K_a, pygame.K_UP):
-                    self.destination_selected = (self.destination_selected - 1) % len(DESTINATIONS)
-                elif key in (pygame.K_RIGHT, pygame.K_d, pygame.K_DOWN):
-                    self.destination_selected = (self.destination_selected + 1) % len(DESTINATIONS)
-                elif key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                    self._check_component()
-                elif key == pygame.K_BACKSPACE:
-                    self.mode = "select"
+                self.confirm_exit = True
             return
-
-        if self.stage == "summary" and key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE, pygame.K_ESCAPE):
-            self.game.set_state("menu")
-
-    def _check_assessment(self):
-        if self.selected == 1:
-            self.correct += 1
-            self.score += 150
-            self.feedback_ok = True
-            self.feedback = ASSESSMENT_OPTIONS[1][1]
-            self.pending_action = "components"
-            self.game.snd.play("achievement")
+        if self.stage == "assess":
+            self._key_assess(enter, left or up, right or down)
         else:
-            self.wrong += 1
-            self.feedback_ok = False
-            self.feedback = ASSESSMENT_OPTIONS[self.selected][1]
-            self.pending_action = None
-            self.game.snd.play("bad")
-        self.feedback_timer = 1.65
+            self._key_triage(key, enter, left, right, up, down)
 
-    def _check_component(self):
-        component = COMPONENTS[self.component_index]
-        selected_key = DESTINATIONS[self.destination_selected][0]
-        if selected_key == component.destination_key:
-            self.correct += 1
-            self.score += 100
-            self.feedback_ok = True
-            self.feedback = "Correto! " + component.description
-            self.pending_action = "next_component"
-            self.game.snd.play("ok")
-        else:
-            self.wrong += 1
-            self.feedback_ok = False
-            correct_name = next(x[1] for x in DESTINATIONS if x[0] == component.destination_key)
-            self.feedback = "Destino inadequado. A classificação correta é: " + correct_name + ". " + component.description
-            self.pending_action = None
-            self.game.snd.play("bad")
-        self.feedback_timer = 1.35
+    def _key_assess(self, enter, prev, nxt):
+        if self.mode == "select":
+            if prev:
+                self.opt_sel = (self.opt_sel - 1) % len(ASSESSMENT_OPTIONS)
+            elif nxt:
+                self.opt_sel = (self.opt_sel + 1) % len(ASSESSMENT_OPTIONS)
+            elif enter:
+                ok, text = self.run.evaluate(ASSESSMENT_OPTIONS[self.opt_sel].key)
+                self.feedback = (text, ok)
+                self.mode = "feedback"
+                self.game.snd.play("achievement" if ok else "bad")
+        elif enter:
+            self.stage, self.mode, self.stage_t = "triage", "select", 0.0
+            self.part_sel = 0
+            self.feedback = ("", True)
 
+    def _free_parts(self):
+        return [i for i, c in enumerate(COMPONENTS) if not self.run.is_classified(c)]
+
+    def _step_part(self, delta):
+        free = self._free_parts()
+        if free:
+            pos = free.index(self.part_sel) if self.part_sel in free else 0
+            self.part_sel = free[(pos + delta) % len(free)]
+
+    def _key_triage(self, key, enter, left, right, up, down):
+        if self.mode == "select":
+            if self.stage_t < 1.4:
+                return                                        # espera a desmontagem terminar
+            if left or up:
+                self._step_part(-1)
+            elif right or down:
+                self._step_part(1)
+            elif enter and self._free_parts():
+                self.mode, self.tray_sel = "choose", 0
+                self.game.progress_store.discover(COMPONENTS[self.part_sel].item_id)
+        elif self.mode == "choose":
+            if left:
+                self.tray_sel = (self.tray_sel - 1) % len(DESTINATIONS)
+            elif right:
+                self.tray_sel = (self.tray_sel + 1) % len(DESTINATIONS)
+            elif key == pygame.K_BACKSPACE:
+                self.mode = "select"
+            elif enter:
+                self._confirm_part()
+        elif enter:                                           # feedback -> continuar
+            self._finish_flight()
+            if self.run.finished:
+                self._to_summary()
+            else:
+                self.mode = "select"
+                self._step_part(0)
+                self.feedback = ("", True)
+
+    def _confirm_part(self):
+        comp = COMPONENTS[self.part_sel]
+        dest_key = DESTINATIONS[self.tray_sel][0]
+        ok, text = self.run.classify(comp, dest_key)
+        self.feedback = (text, ok)
+        self.mode = "feedback"
+        self.game.snd.play("ok" if ok else "bad")
+        target = comp.destination_key                         # a peça sempre termina no destino correto
+        self.flight = {"comp": comp, "t": 0.0, "dur": 0.55, "ok": ok, "dest": target,
+                       "from": self._slot_rect(self.part_sel).center, "to": self._tray_rect(target).center}
+
+    def _finish_flight(self):
+        if self.flight:
+            self.trays[self.flight["dest"]].append(self.flight["comp"])
+            self.flight = None
+
+    def _to_summary(self):
+        self.stage, self.mode, self.stage_t = "summary", "select", 0.0
+        run = self.run
+        self.game.progress_store.register_workshop_completion(run.score, run.perfect)
+        self.game.snd.play("achievement")
+        self.burst_t = 0.0
+
+    # ------------------------------------------------------------- atualização
     def update(self, dt):
         super().update(dt)
-        self.elapsed += dt
-        if self.feedback_timer > 0:
-            self.feedback_timer -= dt
-            if self.feedback_timer <= 0:
-                if self.pending_action == "components":
-                    self.stage = "components"
-                    self.mode = "select"
-                    self.component_index = 0
-                elif self.pending_action == "next_component":
-                    self.component_index += 1
-                    self.mode = "select"
-                    if self.component_index >= len(COMPONENTS):
-                        self._finish()
-                self.pending_action = None
-                self.feedback = ""
+        self.t += dt
+        self.stage_t += dt
+        self.fx.update(dt)
+        if self.flight:
+            self.flight["t"] += dt
+            if self.flight["t"] >= self.flight["dur"]:
+                self._finish_flight()
+        if self.stage == "summary" and self.stage_t < 2.4:
+            self.burst_t -= dt
+            if self.burst_t <= 0:
+                self.burst_t = 0.45
+                for x in (260, 640, 1020):
+                    self.fx.confetti(x, 190, (130, 245, 190), 14)
 
-    def _finish(self):
-        self.stage = "summary"
-        self.game.progress_store.register_workshop_completion()
-        self.game.snd.play("achievement")
+    # --------------------------------------------------------------- geometria
+    def _slot_rect(self, i):
+        c, r = i % 4, i // 4
+        return pygame.Rect(RIGHT_X + c * 204, PY + 20 + r * 126, 190, 112)
 
-    @property
-    def accuracy(self):
-        total = self.correct + self.wrong
-        return int(round(100 * self.correct / total)) if total else 0
+    def _tray_rect(self, key):
+        i = [d[0] for d in DESTINATIONS].index(key)
+        return pygame.Rect(RIGHT_X + i * 274, PY + 276, 260, 138)
 
+    def _sprite(self, kind, obj, size):
+        key = (kind, obj.item_id, size)
+        s = self._sprites.get(key)
+        if s is None:
+            s = (render_component if kind == "c" else render_equipment)(obj, size)
+            self._sprites[key] = s
+        return s
+
+    # ------------------------------------------------------------------ desenho
     def draw(self, surf):
         game = self.game
         self.draw_backdrop(surf)
         surf.blit(game.assets.dim, (0, 0))
-        Ui.panel(surf, (50, 38, 1180, 720), border=(70, 188, 170), bw=3)
-        TEXT.draw(surf, "OFICINA CIRCULAR", 48, (130, 245, 190), (W // 2, 78), "center", bold=True,
-                  outline=(12, 42, 42))
-        TEXT.draw(surf, "LABORATÓRIO DE REUTILIZAÇÃO TECNOLÓGICA", 17, (190, 218, 232),
-                  (W // 2, 116), "center", bold=True)
-
-        if self.stage == "assessment":
-            self._draw_assessment(surf)
-        elif self.stage == "components":
-            self._draw_components(surf)
+        Ui.header(surf, "OFICINA CIRCULAR", "Laboratório de reutilização tecnológica", GREEN, (12, 42, 42), y=44,
+                  size=36)
+        self._draw_steps(surf)
+        Ui.panel(surf, (PX, PY, PW, PH), border=(70, 188, 170), bw=3)
+        if self.stage == "assess":
+            self._draw_assess(surf)
+        elif self.stage == "triage":
+            self._draw_triage(surf)
         else:
             self._draw_summary(surf)
-
-        if self.feedback:
-            col = (132, 245, 170) if self.feedback_ok else (255, 154, 132)
-            box = pygame.Surface((1040, 80), pygame.SRCALPHA)
-            rr(box, (6, 14, 28, 235), (0, 0, 1040, 80), 12, col, 2)
-            lines = TEXT.wrap(self.feedback, 18, 990)[:2]
-            for i, line in enumerate(lines):
-                TEXT.draw(box, line, 18, col if i == 0 else (230, 236, 244), (520, 23 + i * 27), "center", bold=(i == 0))
-            surf.blit(box, (120, 646))
-
+        self._draw_footer(surf)
         if self.confirm_exit:
             surf.blit(game.assets.dim, (0, 0))
-            Ui.panel(surf, (260, 290, 760, 210), border=(255, 190, 100), bw=3)
-            TEXT.draw(surf, "SAIR DA OFICINA?", 38, (255, 220, 150), (W // 2, 345), "center", bold=True)
-            TEXT.draw(surf, "ENTER / Y: sair     ESC / N: continuar", 24, (240, 244, 252),
-                      (W // 2, 420), "center")
+            Ui.panel(surf, (W // 2 - 280, 290, 560, 200), alpha=252, border=(255, 190, 100), bw=3)
+            TEXT.draw(surf, "SAIR DA OFICINA?", 36, (255, 220, 150), (W // 2, 340), "center", bold=True)
+            TEXT.draw(surf, "O progresso desta rodada será perdido.", 17, (214, 224, 244), (W // 2, 384), "center")
+            Ui.hint_bar(surf, [("ENTER", "sair"), ("ESC", "continuar")], 440, 17)
 
-    def _draw_assessment(self, surf):
-        Ui.panel(surf, (105, 154, 1070, 450), border=(70, 130, 170))
-        TEXT.draw(surf, "ETAPA 1 · AVALIAÇÃO DO EQUIPAMENTO", 24, (255, 226, 126),
-                  (145, 184), "topleft", bold=True)
-        icon = render_equipment(self.equipment, 230)
-        surf.blit(icon, (148, 245))
-        TEXT.draw(surf, self.equipment.name, 25, (255, 255, 255), (263, 488), "center", bold=True)
-        TEXT.draw(surf, "CENÁRIO", 17, (130, 245, 190), (438, 240), "topleft", bold=True)
-        scenario = ("O notebook liga e funciona, mas a bateria perdeu autonomia. Um diagnóstico profissional confirmou que "
-                    "a bateria pode ser substituída. Em um aparelho funcional, considere reutilização/doação; "
-                    "quando há defeito recuperável, priorize reparo; se não houver recuperação viável, use logística reversa.")
-        for i, line in enumerate(TEXT.wrap(scenario, 20, 650)):
-            TEXT.draw(surf, line, 20, (225, 234, 246), (438, 274 + i * 29), "topleft")
-        TEXT.draw(surf, "Qual é a destinação mais adequada neste caso?", 21, (255, 225, 130),
-                  (438, 366), "topleft", bold=True)
-        for i, (title, _desc) in enumerate(ASSESSMENT_OPTIONS):
-            y = 414 + i * 54
-            selected = i == self.selected
-            bg = (30, 76, 78) if selected else (18, 30, 54)
-            border = (120, 245, 190) if selected else (72, 104, 144)
-            rr(surf, bg, (430, y, 670, 42), 9, border, 2)
-            TEXT.draw(surf, ("› " if selected else "  ") + title, 19,
-                      (255, 255, 255) if selected else (194, 208, 226), (448, y + 21), "midleft", bold=selected)
-        TEXT.draw(surf, "← → ou A/D para escolher · ENTER para avaliar · ESC para sair", 17,
-                  (165, 184, 212), (W // 2, 612), "center")
+    def _draw_steps(self, surf):
+        idx = {"assess": 0, "triage": 1, "summary": 2}[self.stage]
+        widths = [TEXT.width(f"{i + 1}  {n}", 14, True) + 24 for i, n in enumerate(STEPS)]
+        x = (W - (sum(widths) + 16 * 2)) // 2
+        for i, (name, wd) in enumerate(zip(STEPS, widths)):
+            on = i == idx
+            rr(surf, mix((10, 16, 32), GREEN, 0.35) if on else (10, 16, 32), (x, 94, wd, 26), 13,
+               GREEN if on else (60, 90, 120), 2)
+            TEXT.draw(surf, f"{i + 1}  {name}", 14, (255, 255, 255) if on else (150, 172, 196), (x + wd // 2, 107),
+                      "center", bold=on)
+            x += wd + 16
 
-    def _draw_components(self, surf):
-        Ui.panel(surf, (92, 150, 1096, 454), border=(70, 130, 170))
-        TEXT.draw(surf, "ETAPA 2 · TRIAGEM DE COMPONENTES", 24, (255, 226, 126),
-                  (132, 180), "topleft", bold=True)
-        TEXT.draw(surf, f"COMPONENTE {self.component_index + 1} / {len(COMPONENTS)}", 16,
-                  (140, 236, 200), (1150, 182), "topright", bold=True)
-        comp = COMPONENTS[self.component_index]
-        icon = render_component(comp, 150)
-        surf.blit(icon, (150, 254))
-        TEXT.draw(surf, comp.name, 28, (255, 255, 255), (225, 430), "center", bold=True)
-        for i, line in enumerate(TEXT.wrap(comp.description, 19, 350)[:4]):
-            TEXT.draw(surf, line, 18, (202, 218, 238), (225, 472 + i * 24), "center")
-
-        if self.mode == "select":
-            TEXT.draw(surf, "Selecione o componente na bancada e pressione ENTER para escolher o destino.",
-                      19, (222, 234, 246), (690, 260), "center", max_w=660)
-            for i, item in enumerate(COMPONENTS):
-                x = 430 + (i % 4) * 175
-                y = 310 + (i // 4) * 126
-                active = i == self.component_index
-                rr(surf, (26, 78, 74) if active else (16, 28, 48), (x, y, 154, 104), 10,
-                   (120, 245, 190) if active else (66, 100, 142), 3 if active else 1)
-                mini = render_component(item, 54)
-                surf.blit(mini, (x + 50, y + 4))
-                TEXT.draw(surf, item.name, 15, (255, 255, 255) if active else (190, 204, 226),
-                          (x + 77, y + 80), "center", bold=active, max_w=144)
-            TEXT.draw(surf, "← → / A-D ou ↑ ↓ navega · ENTER seleciona · ESC sai", 17,
-                      (165, 184, 212), (W // 2, 610), "center")
+    def _draw_footer(self, surf):
+        if self.stage == "assess":
+            hints = [("A/D", "escolher"), ("ENTER", "continuar" if self.mode == "feedback" else "avaliar"),
+                     ("ESC", "sair")]
+        elif self.stage == "triage":
+            if self.mode == "select":
+                hints = [("A/D", "escolher peça"), ("ENTER", "selecionar"), ("ESC", "sair")]
+            elif self.mode == "choose":
+                hints = [("A/D", "escolher destino"), ("ENTER", "confirmar"), ("ESC", "voltar")]
+            else:
+                hints = [("ENTER", "continuar"), ("ESC", "sair")]
         else:
-            TEXT.draw(surf, "Para onde este componente deve seguir?", 23, (255, 226, 126),
-                      (785, 300), "center", bold=True)
-            for i, (key, title, subtitle) in enumerate(DESTINATIONS):
-                y = 354 + i * 70
-                active = i == self.destination_selected
-                rr(surf, (26, 78, 74) if active else (16, 28, 48), (470, y, 625, 56), 10,
-                   (120, 245, 190) if active else (66, 100, 142), 3 if active else 1)
-                TEXT.draw(surf, title, 19, (255, 255, 255) if active else (190, 204, 226),
-                          (492, y + 17), "topleft", bold=active)
-                TEXT.draw(surf, subtitle, 15, (184, 202, 224), (492, y + 40), "topleft")
-            TEXT.draw(surf, "← → / A-D escolhe destino · ENTER confirma · BACKSPACE retorna", 17,
-                      (165, 184, 212), (W // 2, 586), "center")
+            hints = [("ENTER", "nova rodada"), ("ESC", "menu")]
+        Ui.hint_bar(surf, hints, 744, 15)
 
+    # ---- bancada (coluna esquerda)
+    def _draw_bench(self, surf, rect, device_size, caption):
+        x, y, w, h = rect
+        rr(surf, (10, 22, 38), rect, 14, (60, 120, 150), 2)
+        cx, cy = x + w // 2, y + 22 + device_size // 2
+        pad = pygame.Surface((w - 40, 40), pygame.SRCALPHA)
+        D.ellipse(pad, (70, 205, 175, 60), (0, 0, w - 40, 40))
+        D.ellipse(pad, (130, 245, 200, 150), (0, 0, w - 40, 40), 2)
+        surf.blit(pad, (x + 20, cy + device_size // 2 - 22))
+        surf.blit(self._sprite("e", self.equipment, device_size), (cx - device_size // 2, cy - device_size // 2))
+        sy = cy - device_size // 2 + (self.t * 70) % device_size          # linha de varredura (usa dt)
+        D.line(surf, (130, 245, 200), (cx - device_size // 2, sy), (cx + device_size // 2, sy), 2)
+        TEXT.draw(surf, self.equipment.name, 22, (255, 255, 255), (cx, y + h - 38), "center", bold=True, max_w=w - 24)
+        TEXT.draw(surf, caption, 13, (150, 200, 210), (cx, y + h - 16), "center", max_w=w - 24)
+
+    # ---- etapa 1
+    def _draw_assess(self, surf):
+        run, sc = self.run, self.run.scenario
+        self._draw_bench(surf, (LEFT_X, PY + 20, LEFT_W, 300), 190, "Equipamento em avaliação")
+        rr(surf, (12, 24, 30), (LEFT_X, PY + 336, LEFT_W, 224), 14, (90, 140, 90), 2)
+        TEXT.draw(surf, "LEMBRE-SE", 15, GREEN, (LEFT_X + 18, PY + 356), "midleft", bold=True)
+        Ui.fit_block(surf, REUSE_NOTE, (LEFT_X + 18, PY + 376, LEFT_W - 36, 90), (226, 236, 246), 18, 13)
+        Ui.fit_block(surf, "Quando não há conserto, o destino é a logística reversa, com operadores especializados.",
+                     (LEFT_X + 18, PY + 470, LEFT_W - 36, 80), (186, 206, 228), 15, 12)
+
+        rr(surf, (12, 20, 38), (RIGHT_X, PY + 20, RIGHT_W, 226), 14, (70, 130, 170), 2)
+        Ui.chip(surf, "ETAPA 1 · LAUDO TÉCNICO", RIGHT_X + 18, PY + 34, GOLD, 14)
+        TEXT.draw(surf, sc.title, 24, (255, 255, 255), (RIGHT_X + 18, PY + 82), "midleft", bold=True,
+                  max_w=RIGHT_W - 36)
+        Ui.bullets(surf, list(sc.symptoms), (RIGHT_X + 18, PY + 108, RIGHT_W - 36, 126), (226, 236, 246), 19, 13)
+
+        TEXT.draw(surf, "Qual é a destinação mais adequada?", 20, GOLD, (RIGHT_X, PY + 266), "midleft", bold=True)
+        ow, gap = 260, 14
+        for i, opt in enumerate(ASSESSMENT_OPTIONS):
+            r = pygame.Rect(RIGHT_X + i * (ow + gap), PY + 286, ow, 150)
+            sel = i == self.opt_sel
+            border = GREEN if sel else (72, 104, 144)
+            mark = None
+            if self.mode == "feedback":
+                if opt.key == sc.answer:
+                    border, mark = (132, 245, 170), "check"
+                elif i == self.opt_sel:
+                    border, mark = RED, "cross"
+            rr(surf, (26, 78, 74) if sel else (16, 28, 54), r, 12, border, 3 if sel or mark else 1)
+            draw_icon(surf, opt.icon, r.centerx, r.y + 34, 40, GREEN if sel else (170, 196, 224))
+            TEXT.draw(surf, opt.title, 16, (255, 255, 255) if sel else (200, 214, 232), (r.centerx, r.y + 72),
+                      "center", bold=True, max_w=ow - 20)
+            Ui.fit_block(surf, opt.subtitle, (r.x + 14, r.y + 88, ow - 28, 54), (186, 206, 228), 14, 11,
+                         align="center")
+            if mark:
+                draw_icon(surf, mark, r.right - 20, r.y + 20, 20, border)
+        self._draw_feedback(surf, (RIGHT_X, PY + 452, RIGHT_W, 108), idle=None)
+
+    # ---- painel de feedback (único para todas as etapas)
+    def _draw_feedback(self, surf, rect, idle):
+        x, y, w, h = rect
+        text, ok = self.feedback
+        if not text:
+            if idle:
+                rr(surf, (22, 18, 12), rect, 12, (150, 110, 60), 1)
+                Ui.fit_block(surf, idle, (x + 16, y + 10, w - 32, h - 20), ORANGE, 15, 11, align="center")
+            return
+        col = (132, 245, 170) if ok else RED
+        rr(surf, (6, 16, 28), rect, 12, col, 3)
+        draw_icon(surf, "check" if ok else "cross", x + 34, y + 36, 30, col)
+        Ui.fit_block(surf, text, (x + 70, y + 12, w - 90, h - 44), (232, 238, 246), 18, 12)
+        if (self.t * 2) % 2 < 1.4:
+            TEXT.draw(surf, "ENTER para continuar", 13, col, (x + w - 16, y + h - 14), "midright", bold=True)
+
+    # ---- etapa 2
+    def _draw_triage(self, surf):
+        run = self.run
+        self._draw_bench(surf, (LEFT_X, PY + 20, LEFT_W, 250), 150, "Triagem profissional")
+        comp = COMPONENTS[self.part_sel]
+        sel_idx = self.part_sel
+        # painel da peça selecionada
+        rr(surf, (12, 20, 38), (LEFT_X, PY + 286, LEFT_W, 274), 14, (70, 130, 170), 2)
+        Ui.chip(surf, "ETAPA 2 · PEÇA " + f"{min(run.parts_done + 1, len(COMPONENTS))}/{len(COMPONENTS)}",
+                LEFT_X + 16, PY + 300, GOLD, 13)
+        surf.blit(self._sprite("c", comp, 72), (LEFT_X + 16, PY + 336))
+        TEXT.draw(surf, comp.name, 22, (255, 255, 255), (LEFT_X + 100, PY + 360), "midleft", bold=True,
+                  max_w=LEFT_W - 116)
+        sub = "Para onde vai esta peça?" if self.mode == "choose" else "Selecione e pressione ENTER."
+        TEXT.draw(surf, sub, 14, GREEN, (LEFT_X + 100, PY + 388), "midleft", max_w=LEFT_W - 116)
+        Ui.fit_block(surf, comp.description, (LEFT_X + 16, PY + 424, LEFT_W - 32, 128), (214, 226, 242), 17, 12)
+
+        # peças (entram voando a partir do notebook)
+        origin = (LEFT_X + LEFT_W // 2, PY + 20 + 100)
+        for i, c in enumerate(COMPONENTS):
+            slot = self._slot_rect(i)
+            done = run.is_classified(c)
+            fly = self.flight and self.flight["comp"] is c
+            k = clamp((self.stage_t - i * 0.12) / 0.7, 0.0, 1.0)
+            e = 1 - (1 - k) ** 3
+            cx = origin[0] + (slot.centerx - origin[0]) * e
+            cy = origin[1] + (slot.centery - origin[1]) * e
+            sc_ = 0.35 + 0.65 * e
+            w, h = int(slot.w * sc_), int(slot.h * sc_)
+            r = pygame.Rect(0, 0, w, h)
+            r.center = (int(cx), int(cy))
+            if done or fly:
+                rr(surf, (12, 18, 30), r, 10, (44, 60, 84), 1)
+                continue
+            active = i == sel_idx and self.mode in ("select", "choose") and k >= 1.0
+            rr(surf, (26, 78, 74) if active else (16, 28, 52), r, 10, GREEN if active else (66, 100, 142),
+               3 if active else 1)
+            if k >= 0.6:
+                spr = self._sprite("c", c, 54)
+                surf.blit(spr, (r.centerx - 27, r.y + 8))
+                TEXT.draw(surf, c.name, 15, (255, 255, 255) if active else (190, 204, 226), (r.centerx, r.bottom - 17),
+                          "center", bold=active, max_w=r.w - 12)
+
+        # bandejas de destino
+        for key, label, subtitle in DESTINATIONS:
+            r = self._tray_rect(key)
+            icon, col = DEST_STYLE[key]
+            idx = [d[0] for d in DESTINATIONS].index(key)
+            hot = self.mode == "choose" and idx == self.tray_sel
+            rr(surf, mix((10, 16, 32), col, 0.28 if hot else 0.08), r, 12, col if hot else shade(col, 0.55), 4 if hot else 2)
+            draw_icon(surf, icon, r.x + 30, r.y + 30, 30, col)
+            TEXT.draw(surf, label, 16, (255, 255, 255), (r.x + 56, r.y + 22), "midleft", bold=True, max_w=r.w - 66)
+            Ui.fit_block(surf, subtitle, (r.x + 56, r.y + 38, r.w - 68, 34), (186, 206, 228), 13, 11)
+            for j, c in enumerate(self.trays[key][:5]):
+                surf.blit(self._sprite("c", c, 36), (r.x + 12 + j * 46, r.bottom - 54))
+        if self.flight:                                        # peça voando até a bandeja
+            f = self.flight
+            p = clamp(f["t"] / f["dur"], 0.0, 1.0)
+            e = p * p * (3 - 2 * p)
+            fx_ = f["from"][0] + (f["to"][0] - f["from"][0]) * e
+            fy_ = f["from"][1] + (f["to"][1] - f["from"][1]) * e - math.sin(p * math.pi) * 40
+            size = int(54 - 20 * e)
+            spr = self._sprite("c", f["comp"], 54)
+            surf.blit(pygame.transform.smoothscale(spr, (size, size)), (int(fx_) - size // 2, int(fy_) - size // 2))
+        self._draw_feedback(surf, (RIGHT_X, PY + 428, RIGHT_W, 132), idle=run.scenario.triage_intro + "  " + SAFETY_NOTE)
+
+    # ---- resultado
     def _draw_summary(self, surf):
-        Ui.panel(surf, (140, 160, 1000, 490), border=(116, 238, 164), bw=3)
-        pulse = 0.5 + 0.5 * math.sin(self.elapsed * 5)
+        run = self.run
+        self.fx.draw_particles(surf)
+        pulse = 0.5 + 0.5 * math.sin(self.t * 5)
         col = (int(120 + 70 * pulse), 255, int(170 + 50 * pulse))
-        TEXT.draw(surf, "TRIAGEM CONCLUÍDA!", 48, col, (W // 2, 214), "center", bold=True,
-                  outline=(12, 42, 32))
-        TEXT.draw(surf, f"{self.correct} classificações corretas · {self.wrong} escolhas inadequadas · {self.accuracy}% de acerto",
-                  22, (228, 238, 248), (W // 2, 280), "center")
-        TEXT.draw(surf, f"PONTUAÇÃO DA OFICINA: {self.score}", 30, (255, 222, 112),
-                  (W // 2, 328), "center", bold=True)
-        reuse = [x.name for x in COMPONENTS if x.destination_key == "reuse"]
-        recovery = [x.name for x in COMPONENTS if x.destination_key == "recovery"]
-        special = [x.name for x in COMPONENTS if x.destination_key == "special"]
-        sections = [("REUTILIZAÇÃO", reuse, (124, 240, 174)),
-                    ("RECUPERAÇÃO DE MATERIAIS", recovery, (130, 202, 255)),
-                    ("TRATAMENTO ESPECIALIZADO", special, (255, 188, 118))]
-        for col_idx, (title, names, color) in enumerate(sections):
-            x = 205 + col_idx * 300
-            rr(surf, (18, 30, 52), (x, 378, 270, 150), 10, color, 2)
-            TEXT.draw(surf, title, 16, color, (x + 135, 400), "center", bold=True, max_w=250)
-            for i, name in enumerate(names):
-                TEXT.draw(surf, "• " + name, 16, (224, 234, 246), (x + 18, 432 + i * 25), "topleft")
-        TEXT.draw(surf, "Curiosidade: trocar uma bateria desgastada pode prolongar a vida útil do notebook e evitar a substituição do aparelho inteiro.",
-                  16, (190, 224, 244), (W // 2, 548), "center", max_w=900)
-        TEXT.draw(surf, "Baterias e placas exigem operadores especializados. Não tente abri-las ou manipulá-las em casa.",
-                  16, (255, 190, 140), (W // 2, 574), "center", max_w=900)
-        TEXT.draw(surf, "ENTER para voltar ao menu", 22, (255, 255, 255), (W // 2, 612), "center", bold=True)
+        TEXT.draw(surf, "OFICINA CONCLUÍDA!", 42, col, (W // 2, PY + 38), "center", bold=True, outline=(12, 42, 32))
+        TEXT.draw(surf, f"{self.equipment.name}  ·  {run.scenario.title}", 17, (214, 228, 242), (W // 2, PY + 76),
+                  "center", max_w=PW - 80)
+        tiles = [("PONTUAÇÃO", str(run.score), GOLD), ("COMPONENTES", f"{run.correct_parts} / {len(COMPONENTS)}", GREEN),
+                 ("AVALIAÇÃO", "Correta" if run.eval_correct else "A melhorar", GREEN if run.eval_correct else ORANGE),
+                 ("PRECISÃO", f"{run.accuracy}%", BLUE)]
+        tw, gap = 270, 16
+        x0 = (W - (4 * tw + 3 * gap)) // 2
+        for i, (lab, val, c) in enumerate(tiles):
+            r = pygame.Rect(x0 + i * (tw + gap), PY + 100, tw, 70)
+            rr(surf, (12, 22, 40), r, 12, c, 2)
+            TEXT.draw(surf, lab, 13, (160, 184, 212), (r.centerx, r.y + 17), "center", bold=True)
+            TEXT.draw(surf, val, 28, c, (r.centerx, r.y + 46), "center", bold=True, max_w=tw - 20)
+        cw = 376
+        for i, (key, label, _s) in enumerate(DESTINATIONS):
+            icon, c = DEST_STYLE[key]
+            r = pygame.Rect(LEFT_X + i * (cw + 16), PY + 190, cw, 188)
+            rr(surf, (14, 24, 44), r, 12, c, 2)
+            draw_icon(surf, icon, r.x + 26, r.y + 24, 24, c)
+            TEXT.draw(surf, label, 15, c, (r.x + 48, r.y + 24), "midleft", bold=True, max_w=cw - 60)
+            row = 0
+            for comp in COMPONENTS:
+                if comp.destination_key != key:
+                    continue
+                ok = run.results.get(comp.item_id, (None, False))[1]
+                yy = r.y + 56 + row * 30
+                draw_icon(surf, "check" if ok else "cross", r.x + 24, yy, 16, (132, 245, 170) if ok else RED)
+                TEXT.draw(surf, comp.name, 17, (232, 238, 246), (r.x + 46, yy), "midleft", max_w=cw - 60)
+                row += 1
+        mats = ", ".join(run.recoverable_materials())
+        reuse = ", ".join(c.name for c in run.reusable())
+        lines = [("MATERIAIS QUE VOLTAM À CADEIA PRODUTIVA: " + mats + ".", BLUE),
+                 ("COMPONENTES REUTILIZÁVEIS, APÓS TESTES: " + reuse + ".", GREEN),
+                 ("CURIOSIDADE: " + CURIOSITY, (200, 224, 244)),
+                 (SAFETY_NOTE, ORANGE)]
+        y = PY + 392
+        for text, c in lines:
+            bottom, _sz = Ui.fit_block(surf, text, (LEFT_X, y, PW - 48, 34), c, 15, 11, bold=text.startswith("MATERIAIS") or
+                                       text.startswith("COMPONENTES"))
+            y += 42 if text.startswith("CURIOSIDADE") else 34

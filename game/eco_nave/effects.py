@@ -88,7 +88,8 @@ class Effects:
     """Gerencia todos os efeitos ativos e o tremor de tela."""
     SHAKE_TIME = 0.35
 
-    def __init__(self):
+    def __init__(self, rng=None):
+        self.rng = rng or random   # por padrao usa o 'random' global (mesmo comportamento de antes)
         self.reset()
 
     def reset(self):
@@ -126,25 +127,25 @@ class Effects:
     def confetti(self, x, y, color, n):
         cols = (color, (255, 255, 255), mix(color, (255, 255, 255), 0.5), (255, 230, 90))
         for _ in range(n):
-            a = math.radians(random.uniform(-165, -15))
-            sp = random.uniform(140, 430)
-            self.particles.append(Particle(x + random.uniform(-20, 20), y, math.cos(a) * sp, math.sin(a) * sp,
-                                           random.uniform(0.6, 1.1), random.choice(cols), random.randint(4, 8), 1.1))
+            a = math.radians(self.rng.uniform(-165, -15))
+            sp = self.rng.uniform(140, 430)
+            self.particles.append(Particle(x + self.rng.uniform(-20, 20), y, math.cos(a) * sp, math.sin(a) * sp,
+                                           self.rng.uniform(0.6, 1.1), self.rng.choice(cols), self.rng.randint(4, 8), 1.1))
 
     def sparks(self, x, y, color, n):
         for _ in range(n):
-            a = math.radians(random.uniform(-170, -10))
-            sp = random.uniform(120, 360)
-            self.particles.append(Particle(x + random.uniform(-16, 16), y, math.cos(a) * sp, math.sin(a) * sp,
-                                           random.uniform(0.4, 0.8),
-                                           random.choice((color, (255, 190, 90), (90, 90, 96))),
-                                           random.randint(3, 6), 0.8))
+            a = math.radians(self.rng.uniform(-170, -10))
+            sp = self.rng.uniform(120, 360)
+            self.particles.append(Particle(x + self.rng.uniform(-16, 16), y, math.cos(a) * sp, math.sin(a) * sp,
+                                           self.rng.uniform(0.4, 0.8),
+                                           self.rng.choice((color, (255, 190, 90), (90, 90, 96))),
+                                           self.rng.randint(3, 6), 0.8))
 
     def fly_into_bin(self, sprite, x, y, tx, ty):
         self.item_fx.append(ItemEffect(sprite, x, y, tx, ty, 0.28, True))
 
     def bounce_away(self, sprite, x, y):
-        self.item_fx.append(ItemEffect(sprite, x, y, x, y, 0.7, False, vx=random.uniform(-170, 170)))
+        self.item_fx.append(ItemEffect(sprite, x, y, x, y, 0.7, False, vx=self.rng.uniform(-170, 170)))
 
     # ---- desenho
     def draw_items(self, surf):

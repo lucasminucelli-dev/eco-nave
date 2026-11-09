@@ -80,7 +80,7 @@ def _(s):
     D.ellipse(s, (164, 116, 72), (31, 30, 66, 18))
     for x, y in ((44, 63), (66, 76), (88, 58), (72, 91)):
         D.circle(s, (58, 36, 24), (x, y), 4)
-    D.arc(s, (18, 32, 92, 72), 0, 3.14, (222, 192, 142), 3)
+    D.arc(s, (222, 192, 142), (18, 32, 92, 72), 0, 3.14, 3)
 
 
 @item("marrom", "Cascas de legumes", "Cascas de legumes sem contaminação podem ser destinadas à compostagem doméstica ou comunitária.")

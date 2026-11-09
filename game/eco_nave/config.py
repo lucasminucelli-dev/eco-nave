@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Configuracoes gerais do jogo: tela, faixas das lixeiras, vidas e dificuldade."""
 
-TITLE = "ECO NAVE - Desafio do Descarte"
+VERSION = "2.1"
+TITLE = "ECO NAVE " + VERSION + " - Desafio do Descarte"
 W, H = 1280, 800
 FPS = 60
 

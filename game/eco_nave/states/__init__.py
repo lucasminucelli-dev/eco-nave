@@ -11,3 +11,5 @@ from .workshop import WorkshopState  # noqa: F401
 from .codex import CodexState  # noqa: F401
 
 from .real_world import RealWorldState  # noqa: F401
+
+from .help import HelpState  # noqa: F401

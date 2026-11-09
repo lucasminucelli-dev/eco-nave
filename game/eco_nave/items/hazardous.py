@@ -5,7 +5,7 @@ from ..drawing import D, rr
 from .catalog import item
 
 
-@item("laranja", "Pilha", "Pilhas podem conter substâncias que exigem coleta específica. Use pontos de entrega do sistema de logística reversa.", reverse_logistics=True)
+@item("laranja", "Pilha", "Pilhas podem conter substâncias que exigem coleta específica. Use pontos de entrega do sistema de logística reversa.", reverse_logistics=True, spawn_weight=2)
 def _(s):
     rr(s, (200, 202, 208), (56, 8, 16, 16), 3)
     rr(s, (32, 34, 40), (40, 20, 48, 100), 8)
@@ -17,7 +17,7 @@ def _(s):
     D.rect(s, (96, 98, 108), (46, 28, 6, 86), 0, border_radius=3)
 
 
-@item("laranja", "Bateria de celular", "Baterias de lítio podem incendiar se danificadas. Não amasse, perfure ou abra; encaminhe a um ponto de recebimento.", is_component=True, reverse_logistics=True)
+@item("laranja", "Bateria de celular", "Baterias de lítio podem incendiar se danificadas. Não amasse, perfure ou abra; encaminhe a um ponto de recebimento.", is_component=True, reverse_logistics=True, spawn_weight=2)
 def _(s):
     rr(s, (74, 84, 100), (20, 26, 88, 76), 8, (42, 50, 62))
     rr(s, (100, 112, 132), (27, 33, 74, 62), 6)
@@ -26,7 +26,7 @@ def _(s):
     D.polygon(s, (255, 222, 52), [(74, 38), (48, 68), (63, 68), (56, 92), (82, 60), (67, 60), (78, 38)])
 
 
-@item("laranja", "Lâmpada fluorescente", "Lâmpadas fluorescentes podem conter mercúrio e exigem logística reversa ou coleta especializada.", reverse_logistics=True)
+@item("laranja", "Lâmpada fluorescente", "Lâmpadas fluorescentes podem conter mercúrio e exigem logística reversa ou coleta especializada.", reverse_logistics=True, spawn_weight=2)
 def _(s):
     D.circle(s, (255, 250, 200), (64, 50), 46)
     for x in (44, 64, 84):
@@ -41,7 +41,7 @@ def _(s):
     rr(s, (60, 62, 68), (54, 108, 20, 10), 3)
 
 
-@item("laranja", "Cartucho de tinta", "Cartuchos e toners podem ter sistema de devolução próprio. Consulte o fabricante, a loja ou o serviço local.", reverse_logistics=True)
+@item("laranja", "Cartucho de tinta", "Cartuchos e toners podem ter sistema de devolução próprio. Consulte o fabricante, a loja ou o serviço local.", reverse_logistics=True, spawn_weight=2)
 def _(s):
     rr(s, (60, 62, 76), (22, 24, 84, 68), 6, (36, 38, 48))
     for i, c in enumerate(((0, 190, 232), (232, 44, 142), (250, 222, 34))):

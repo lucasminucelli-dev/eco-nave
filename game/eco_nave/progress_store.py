@@ -13,6 +13,9 @@ class ProgressStore:
         self.discovered_ids = set()
         self.achievement_levels = set()
         self.workshop_completions = 0
+        self.workshop_best_score = 0
+        self.workshop_perfect_runs = 0
+        self.load_error = None          # texto do problema, se o arquivo estava ilegivel
         self.load()
 
     @classmethod
@@ -34,13 +37,26 @@ class ProgressStore:
                 if str(x).isdigit()
             }
             self.workshop_completions = max(0, int(data.get("workshop_completions", 0)))
+            self.workshop_best_score = max(0, int(data.get("workshop_best_score", 0)))
+            self.workshop_perfect_runs = max(0, int(data.get("workshop_perfect_runs", 0)))
         except FileNotFoundError:
             self._save()
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
-            # Mantém o jogo jogável quando o arquivo está ausente ou corrompido.
+            # Mantém o jogo jogável quando o arquivo está corrompido, mas guarda uma cópia para
+            # que as descobertas antigas não sejam perdidas no próximo salvamento.
             self.discovered_ids = set()
             self.achievement_levels = set()
             self.workshop_completions = 0
+            self.workshop_best_score = 0
+            self.workshop_perfect_runs = 0
+            self.load_error = "arquivo de progresso ilegível"
+            self._backup_corrupt()
+
+    def _backup_corrupt(self):
+        try:
+            os.replace(self.path, self.path + ".corrompido")
+        except OSError:
+            pass
 
     def _save(self):
         folder = os.path.dirname(self.path)
@@ -52,6 +68,8 @@ class ProgressStore:
                 "discovered_ids": sorted(self.discovered_ids),
                 "achievement_levels": sorted(self.achievement_levels),
                 "workshop_completions": self.workshop_completions,
+                "workshop_best_score": self.workshop_best_score,
+                "workshop_perfect_runs": self.workshop_perfect_runs,
             }
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as stream:
@@ -77,6 +95,9 @@ class ProgressStore:
         self._save()
         return True
 
-    def register_workshop_completion(self):
+    def register_workshop_completion(self, score=0, perfect=False):
         self.workshop_completions += 1
+        self.workshop_best_score = max(self.workshop_best_score, int(score))
+        if perfect:
+            self.workshop_perfect_runs += 1
         self._save()

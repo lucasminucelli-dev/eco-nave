@@ -194,3 +194,106 @@ def render_component(component, size=96):
         D.rect(surf, (224, 180, 72), (p(52), p(14), p(24), p(10)), 0, border_radius=p(2))
         D.polygon(surf, (255, 218, 84), [(p(72), p(34)), (p(54), p(64)), (p(68), p(64)), (p(58), p(94)), (p(84), p(56)), (p(70), p(56))])
     return surf
+
+
+# ======================================================================================
+# Avaliação do equipamento (Etapa 1): cenários variados, opções fixas.
+# ======================================================================================
+@dataclass(frozen=True)
+class AssessmentOption:
+    key: str
+    title: str
+    subtitle: str
+    icon: str
+
+
+ASSESSMENT_OPTIONS = (
+    AssessmentOption("reuse", "REUTILIZAR / DOAR", "Funciona: segue em uso, é doado ou recondicionado", "reuse"),
+    AssessmentOption("repair", "MANUTENÇÃO", "Defeito recuperável: assistência técnica qualificada", "wrench"),
+    AssessmentOption("recycle", "RECICLAGEM ESPECIALIZADA", "Sem conserto viável: logística reversa", "recycle"),
+)
+
+
+@dataclass(frozen=True)
+class Scenario:
+    key: str
+    title: str
+    symptoms: tuple
+    answer: str             # chave de AssessmentOption
+    explanation: str        # mostrada quando o jogador acerta
+    wrong: dict             # chave da opção errada -> explicação
+    triage_intro: str
+
+
+SAFETY_NOTE = ("Baterias e placas eletrônicas só devem ser manipuladas por profissionais e operadores "
+               "especializados. Não tente abrir, perfurar ou cortar.")
+
+REUSE_NOTE = "Reutilizar e prolongar a vida útil costuma ser melhor do que descartar."
+
+_NEXT_BATCH = "Agora um notebook do mesmo lote, sem conserto, chega à bancada para triagem de componentes."
+
+SCENARIOS = (
+    Scenario(
+        "slow", "Lento, mas funcionando",
+        ("Liga normalmente e abre os programas.", "Tela, teclado e portas funcionam bem.",
+         "Está lento: tem pouca memória e um disco antigo.", "Ainda guarda arquivos pessoais do antigo dono."),
+        "reuse",
+        "O notebook funciona, então o melhor destino é continuar em uso: ele pode ser doado, vendido ou "
+        "recondicionado. Antes de passar adiante, os dados pessoais devem ser apagados com método seguro.",
+        {"repair": "Não há defeito a consertar: o aparelho só está lento. O primeiro passo é reaproveitar o "
+                   "equipamento inteiro, por doação ou recondicionamento.",
+         "recycle": "Reciclar um aparelho que ainda funciona desperdiça a vida útil que ele tem. A reciclagem "
+                    "fica para quando não há mais uso possível."},
+        _NEXT_BATCH),
+    Scenario(
+        "battery", "Bateria sem autonomia",
+        ("Liga e funciona normalmente na tomada.", "A bateria perdeu a autonomia e desliga em poucos minutos.",
+         "Um técnico confirmou que a bateria pode ser substituída."),
+        "repair",
+        "É um defeito recuperável: um profissional pode substituir a bateria e testar o notebook antes de doar "
+        "ou reutilizar. Consertar prolonga a vida útil e evita gerar lixo eletrônico.",
+        {"reuse": "O defeito é conhecido e tem solução. Corrija antes de repassar o equipamento, para que ele "
+                  "seja realmente útil a quem receber.",
+         "recycle": "A bateria pode ser substituída, então o notebook ainda tem conserto. A reciclagem "
+                    "especializada é para quando não há recuperação viável."},
+        _NEXT_BATCH),
+    Scenario(
+        "keyboard", "Teclado com falhas",
+        ("Liga e funciona, mas várias teclas não respondem.", "Tela e demais partes estão em bom estado.",
+         "A assistência técnica informou que o teclado é substituível."),
+        "repair",
+        "Uma única peça com defeito, que um técnico pode substituir, não justifica descartar o notebook inteiro. "
+        "A manutenção devolve o aparelho ao uso.",
+        {"reuse": "Doar com defeito transfere o problema para outra pessoa. Conserte antes, e ele poderá ser "
+                  "usado por muito mais tempo.",
+         "recycle": "Como existe conserto viável, a reciclagem seria precoce: o aparelho ainda pode voltar ao uso."},
+        _NEXT_BATCH),
+    Scenario(
+        "liquid", "Sem conserto",
+        ("Não liga mais depois de contato com líquido.", "Há sinais de oxidação e a tela está trincada.",
+         "O laudo técnico indica placa danificada e reparo inviável."),
+        "recycle",
+        "Sem possibilidade de recuperação, o equipamento segue para a logística reversa: um ponto de recebimento "
+        "o encaminha a recicladores especializados, que separam peças reutilizáveis, materiais e o que exige "
+        "tratamento específico.",
+        {"reuse": "O aparelho não funciona e não tem reparo viável, então não serve para doação. O caminho é a "
+                  "reciclagem especializada.",
+         "repair": "O laudo diz que o reparo é inviável. Insistir em consertar gasta tempo e recursos; encaminhe "
+                   "à reciclagem especializada."},
+        "O notebook segue para a triagem profissional de componentes."),
+)
+
+COMPONENT_MATERIALS = {
+    "comp_estrutura_metalica": ("metais",),
+    "comp_pecas_plasticas": ("plásticos",),
+    "comp_cabos": ("cobre", "plásticos"),
+}
+
+
+def component_materials(component):
+    """Materiais que voltam à cadeia produtiva quando o componente é corretamente triado."""
+    return COMPONENT_MATERIALS.get(component.item_id, ())
+
+
+def destination_label(key):
+    return next(d[1] for d in DESTINATIONS if d[0] == key)

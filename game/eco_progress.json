@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "discovered_ids": [
+    "bateria_de_celular",
+    "caixa_de_papelao",
+    "capa_de_celular",
+    "comp_memoria_ram",
+    "equip_notebook_antigo",
+    "garrafa_pet",
+    "lampada_fluorescente",
+    "manual_de_instrucoes",
+    "pote_de_vidro",
+    "sobras_de_madeira_de_moveis",
+    "tampa_metalica"
+  ],
+  "achievement_levels": [],
+  "workshop_completions": 0,
+  "workshop_best_score": 0,
+  "workshop_perfect_runs": 0
+}

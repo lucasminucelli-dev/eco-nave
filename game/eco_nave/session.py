@@ -155,6 +155,7 @@ class Session:
         if it is not None:
             hover = it.lane
             surf.blit(a.lane_glow[it.lane], (it.lane * LANE_W, 0))
+        self.banner.draw_back(surf)            # cartão de conquista fica atrás do lixo
         cy = SHIP_Y + math.sin(self.ship.bob * 2.4) * 4
         self.ship.draw(surf, a, t, cy)
         if it is not None:

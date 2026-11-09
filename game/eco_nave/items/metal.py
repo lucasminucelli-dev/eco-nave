@@ -34,7 +34,7 @@ def _(s):
     D.circle(s, (108, 114, 126), (60, 42), 13, 3)
 
 
-@item("amarelo", "Fio de cobre", "O cobre dos fios e cabos é valioso e pode ser reaproveitado.")
+@item("amarelo", "Fio de cobre", "O cobre dos fios e cabos é valioso e pode ser reaproveitado.", is_component=True, spawn_weight=2)
 def _(s):
     C, C2 = (214, 128, 64), (150, 80, 36)
     for i in range(5):
@@ -44,7 +44,7 @@ def _(s):
     D.lines(s, C, False, [(104, 82), (116, 96), (100, 116)], 5)
 
 
-@item("amarelo", "Dissipador de calor", "Peças de alumínio limpas e separadas podem ser recuperadas como metal; placas e aparelhos inteiros seguem para logística reversa especializada.")
+@item("amarelo", "Dissipador de calor", "Peças de alumínio limpas e separadas podem ser recuperadas como metal; placas e aparelhos inteiros seguem para logística reversa especializada.", is_component=True, spawn_weight=2)
 def _(s):
     for i in range(9):
         x = 12 + i * 11

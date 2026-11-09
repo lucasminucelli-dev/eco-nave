@@ -9,6 +9,11 @@ from .text import TEXT
 from .utils import clamp, fmt
 
 
+def Ui_fit(surf, text, rect, color, size_max, size_min):
+    from .ui import fit_block        # import tardio: evita ciclo entre hud e ui
+    return fit_block(surf, text, rect, color, size_max, size_min, align="center")
+
+
 class Hud:
     """Placar, combo, nivel, barra de progresso e coracoes de vida."""
 
@@ -105,41 +110,42 @@ class LevelBanner:
             if self.t <= 0:
                 self.clear()
 
+    def draw_back(self, surf):
+        """Cartão de conquista. É desenhado ANTES do lixo e da nave e é translucido,
+        para o jogador continuar vendo o resíduo caindo durante os ~5 segundos de leitura."""
+        if not self.visible or not self.title:
+            return
+        p = clamp(self.t / max(0.01, self.duration), 0.0, 1.0)
+        alpha = 255 * min(1.0, p * 3.0, (self.duration - self.t) * 4.0 + 0.2)
+        pulse = 0.5 + 0.5 * math.sin(self.t * 5.2)
+        pw, ph = 910, 230
+        panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
+        D.rect(panel, (6, 16, 32, 150), (0, 0, pw, ph), 0, border_radius=24)
+        D.rect(panel, (80, 220, 170, int(24 + pulse * 36)), (0, 0, pw, ph), 0, border_radius=24)
+        D.rect(panel, (120, 255, 196, 245), (0, 0, pw, ph), 3, border_radius=24)
+        for i in range(18):
+            ang = self.t * 1.4 + i * 6.283 / 18
+            x = int(pw / 2 + math.cos(ang) * (390 + 20 * math.sin(self.t * 2 + i)))
+            y = int(ph / 2 + math.sin(ang) * (84 + 8 * math.cos(self.t * 3 + i)))
+            D.circle(panel, (150, 255, 204, int(100 + 130 * pulse)), (x, y), 2 + (i % 3 == 0))
+        TEXT.draw(panel, self.text or "PARABÉNS!", 32, (255, 232, 128), (pw // 2, 36), "center", bold=True,
+                  outline=(10, 20, 30))
+        TEXT.draw(panel, self.title, 42, (140, 255, 196), (pw // 2, 94), "center", bold=True,
+                  outline=(12, 45, 42), max_w=pw - 40)
+        msg = self.congrats or self.sub or "Continue fazendo a diferença pelo planeta!"
+        Ui_fit(panel, msg, (60, 136, pw - 120, 56), (238, 245, 250), 21, 14)
+        TEXT.draw(panel, "NOVO TÍTULO DESBLOQUEADO", 13, (170, 214, 224), (pw // 2, ph - 18), "center", bold=True)
+        panel.set_alpha(int(alpha))
+        surf.blit(panel, ((W - pw) // 2, 190))
+
     def draw(self, surf):
-        if not self.visible:
+        """Aviso de nível (letreiro grande). O cartão de conquista usa draw_back."""
+        if not self.visible or self.title:
             return
         p = clamp(self.t / max(0.01, self.duration), 0.0, 1.0)
         alpha = 255 * min(1.0, p * 3.0)
-        if self.title:
-            # Cartão de conquista com brilho pulsante e pequenas partículas orbitais.
-            pulse = 0.5 + 0.5 * math.sin(self.t * 5.2)
-            pw, ph = 910, 250
-            panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
-            glow = (80, 220, 170, int(36 + pulse * 44))
-            D.rect(panel, (6, 16, 32, 238), (0, 0, pw, ph), 0, border_radius=24)
-            D.rect(panel, glow, (0, 0, pw, ph), 0, border_radius=24)
-            D.rect(panel, (120, 255, 196, 245), (0, 0, pw, ph), 3, border_radius=24)
-            for i in range(18):
-                ang = self.t * 1.4 + i * 6.283 / 18
-                rx = 390 + 20 * math.sin(self.t * 2 + i)
-                ry = 92 + 8 * math.cos(self.t * 3 + i)
-                x = int(pw / 2 + math.cos(ang) * rx)
-                y = int(ph / 2 + math.sin(ang) * ry)
-                D.circle(panel, (150, 255, 204, int(100 + 130 * pulse)), (x, y), 2 + (i % 3 == 0))
-            TEXT.draw(panel, self.text or "PARABÉNS!", 34, (255, 232, 128), (pw // 2, 42), "center", bold=True)
-            TEXT.draw(panel, self.title, 43, (140, 255, 196), (pw // 2, 105), "center", bold=True,
-                      outline=(12, 45, 42), max_w=pw - 40)
-            msg = self.congrats or self.sub or "Continue fazendo a diferença pelo planeta!"
-            lines = TEXT.wrap(msg, 21, pw - 100)[:2]
-            for i, line in enumerate(lines):
-                TEXT.draw(panel, line, 21, (238, 245, 250), (pw // 2, 174 + i * 28), "center")
-            TEXT.draw(panel, "NOVO TÍTULO DESBLOQUEADO", 14, (170, 214, 224),
-                      (pw // 2, 226), "center", bold=True)
-            panel.set_alpha(int(alpha))
-            surf.blit(panel, ((W - pw) // 2, (800 - ph) // 2))
-        else:
-            y = 290 - (1 - p) * 30
-            TEXT.draw(surf, self.text, 84, (255, 236, 110), (W // 2, y), "center", bold=True,
-                      outline=(20, 16, 40), alpha=alpha)
-            TEXT.draw(surf, self.sub, 28, (255, 255, 255), (W // 2, y + 58), "center", bold=True,
-                      outline=(20, 16, 40), alpha=alpha)
+        y = 290 - (1 - p) * 30
+        TEXT.draw(surf, self.text, 84, (255, 236, 110), (W // 2, y), "center", bold=True,
+                  outline=(20, 16, 40), alpha=alpha)
+        TEXT.draw(surf, self.sub, 28, (255, 255, 255), (W // 2, y + 58), "center", bold=True,
+                  outline=(20, 16, 40), alpha=alpha)
